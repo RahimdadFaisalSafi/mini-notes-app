@@ -1,13 +1,32 @@
-# Build stage
-FROM node:alpine AS build
+# Stage 1: Build stage
+FROM node:lts-alpine AS builder
+
+# Set working directory
 WORKDIR /app
+
+# Copy package.json and package-lock.json
 COPY package*.json ./
+
+# Install dependencies
 RUN npm install
+
+# Copy the rest of the application code
 COPY . .
+
+# Build the application
 RUN npm run build
 
-# Production stage
+# Stage 2: Production stage
 FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
+
+# Copy the built application from the builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Add health check for container monitoring
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- http://localhost/ || exit 1
+
+# Expose port 80
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+
+# Nginx will start automatically, no need for CMD
