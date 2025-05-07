@@ -1,72 +1,52 @@
 # Reflection Answers
 
-### What exactly is stored in the Docker image for the API – source code plus all dependencies (dev and prod) or only production dependencies?
+## Path of an API Request
 
-In the backend Dockerfile, we use `npm install --production` which means only production dependencies are installed, not development dependencies. The Docker image contains:
-- The source code of the application
-- Only production dependencies from package.json (those not listed under "devDependencies")
-- The Node.js runtime environment
+When the browser makes an API request to the backend, the path is as follows:
 
-This approach keeps the Docker image smaller and more secure by excluding development tools, testing libraries, and other dependencies not needed for running the application in production.
+1. **Browser**: User interacts with the React app, which triggers a fetch request to `/api/notes`
+   - This happens even though the environment variable is set to `http://localhost:3000/api/notes`
+   - Our App.js code extracts the base URL and constructs the proper endpoint
+2. **Host**: The request goes to the host machine at `http://localhost:8080/api/notes` (the port mapped to the frontend container)
+3. **Frontend Container (Nginx)**: 
+   - Nginx receives the request
+   - Since the path matches the `/api/` location block in the nginx.conf
+   - Nginx forwards the request to `http://backend-service:3000/api/notes` via the internal Docker network
+4. **Docker Network**: The request travels across the Docker bridge network
+5. **Backend Container**: 
+   - The Node.js application receives the request at `/api/notes` 
+   - The Express router processes it and sends back a response
+   - The response follows the same path back to the browser in reverse
 
-### What role does Nginx play in the frontend container in this full-stack setup?
+## Why Can't the Browser Resolve backend-service:3000 Directly?
 
-Nginx serves several important roles in the frontend container:
+The browser can't resolve `backend-service:3000` directly because:
 
-1. **Static File Server**: Nginx efficiently serves the static built files (HTML, CSS, JavaScript) that comprise the React application.
-2. **Performance Optimization**: Nginx is optimized for serving static content with high performance and low resource usage.
-3. **Single Page Application Support**: The configuration with `try_files $uri $uri/ /index.html;` ensures that all routes in the React app are properly handled by returning the main index.html file for client-side routing.
-4. **Security Layer**: Nginx adds a layer of security between the internet and the application code.
-5. **Load Balancing** (if configured): In more complex setups, Nginx can also act as a load balancer.
+1. **DNS Resolution**: `backend-service` is a Docker container name that is only resolvable within the Docker network. It's not a registered domain name on the public DNS system.
 
-### Why is a tool like nodemon usually not used in the final production container (backend)?
+2. **Network Isolation**: Docker networks are isolated from the host network by default. The Docker networking system provides its own DNS service for name resolution between containers, but this is only accessible from within the Docker network.
 
-Nodemon is not used in production containers for several reasons:
+3. **Port Availability**: Even if the browser could somehow resolve `backend-service`, port 3000 isn't directly exposed to the host network (we expose it only for debugging purposes).
 
-1. **Resource Overhead**: Nodemon continually monitors the file system for changes, which consumes extra CPU and memory resources.
-2. **Unnecessary Functionality**: In production, code changes should not be happening, so the file watching and auto-restart features are redundant.
-3. **Stability**: Production applications need stable, predictable processes without unexpected restarts.
-4. **Security**: Having additional tools like nodemon increases the attack surface of the container.
-5. **Container Philosophy**: Docker containers should be immutable - if code changes are needed, a new container should be built and deployed rather than changing code in a running container.
+Nginx in the frontend container can resolve `backend-service` because:
+- Both containers (frontend and backend) are connected to the same Docker network (`my-app-network`)
+- Docker automatically creates DNS entries for container names in the network
+- Docker's embedded DNS server allows containers to find each other by name
 
-### How does the frontend container communicate with the backend container when both are started separately and ports are mapped?
+## Role of the Custom Nginx Configuration
 
-The path of an HTTP request from the browser to the backend:
+The custom Nginx configuration serves several important roles:
 
-1. The user interacts with the React application running in their browser.
-2. The React app makes a fetch request to the backend API URL (e.g., `http://localhost:8081/api/notes`).
-3. The browser sends this HTTP request to localhost port 8081.
-4. The host operating system receives this request on port 8081 and forwards it to the Docker network.
-5. Docker's port mapping routes traffic from host port 8081 to container port 3000.
-6. The Node.js Express application running inside the backend container receives the request on port 3000.
-7. Express processes the request, executes the corresponding route handler, and generates a response.
-8. The response follows the reverse path back to the browser.
+1. **Static File Serving**: It serves the compiled React application from `/usr/share/nginx/html` for requests to the root path.
 
-Despite being in separate containers, communication works because of Docker's port mapping that exposes the internal container ports to the host network.
+2. **Single Page Application Support**: The `try_files $uri $uri/ /index.html;` directive ensures that SPA routing works correctly by falling back to `index.html` for routes that don't match physical files.
 
-### Why is the backend URL (VITE_API_URL) injected as a build argument during the frontend build and not simply set as an environment variable for the running frontend container?
+3. **Reverse Proxy**: It forwards requests with the `/api` prefix to the backend service, allowing the frontend and backend to appear as a single integrated application to the browser.
 
-The backend URL is injected as a build argument rather than a runtime environment variable because:
+4. **Network Abstraction**: It abstracts the internal network structure from external clients. Browsers only need to know about a single host (localhost:8080), while the actual backend service location is hidden.
 
-1. **Client-Side Execution**: React applications run in the browser after being built. Once the JavaScript bundle is created during the build process, the environment variables need to be "baked in" to the code.
-2. **Build-Time vs. Runtime**: Environment variables in a traditional Node.js application can be accessed at runtime, but in a frontend application, they must be included during the build process.
-3. **No Server Processing**: The Nginx container serving the frontend files is just a static file server with no JavaScript engine to process environment variables at request time.
-4. **Security and Flexibility**: This approach allows you to build different versions of the frontend for different environments (development, staging, production) with appropriate API URLs without changing the source code.
+5. **Security Enhancement**: By not exposing the backend directly, we reduce the attack surface and can implement additional security measures at the Nginx level if needed.
 
-Vite specifically uses the `import.meta.env` syntax to access environment variables, which are replaced with actual values during the build process.
+6. **Header Management**: The configuration sets proper headers for proxy communication, ensuring that upgraded connections (like WebSockets) work correctly.
 
-### Briefly describe which best practices you used when installing the Node.js dependencies in the backend Dockerfile and why.
-
-Best practices used in the backend Dockerfile:
-
-1. **Production Dependencies Only**: Using `npm install --production` installs only the dependencies required to run the application, excluding development dependencies. This reduces image size, potential security vulnerabilities, and build time.
-
-2. **Multi-Stage Copy Process**: Copying package.json and package-lock.json first before copying the rest of the code allows Docker to cache the dependency installation layer, speeding up builds when only application code changes.
-
-3. **Official Node.js Alpine Image**: Using `node:lts-alpine` provides a secure, up-to-date, and smaller base image compared to full Debian-based Node.js images.
-
-4. **Working Directory**: Setting a specific working directory (`/app`) keeps the container organized and avoids conflicts with system files.
-
-5. **Explicit Port Exposure**: Using the `EXPOSE` directive clearly documents which ports the container uses.
-
-6. **Explicit CMD**: Defining the exact startup command ensures the application starts consistently regardless of base image changes.
+This pattern is commonly used in microservices architectures and provides a clean separation between frontend and backend services while maintaining a unified interface for clients.

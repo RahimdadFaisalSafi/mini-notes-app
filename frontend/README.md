@@ -1,138 +1,130 @@
-# Notes Application with Docker Persistence
+# Docker Setup Instructions for Notes App
 
-This project implements a simple notes application with React frontend and Node.js/Express backend. The backend uses file-based persistence with Docker volumes to ensure data is preserved across container restarts.
+## Prerequisites
+- Docker installed on your system
+- Project with the directory structure as described in the Directory Structure document
 
-## Project Structure
-
-```
-notes-app/
-├── frontend/
-│   ├── Dockerfile
-│   └── ... (React application files)
-├── backend/
-│   ├── Dockerfile
-│   ├── server.js
-│   ├── routes/
-│   │   └── noteRoutes.js
-│   └── ... (Node.js application files)
-└── README.md
-```
-
-## Data Persistence Implementation
-
-The backend now uses file-based persistence instead of in-memory storage:
-
-1. Notes are stored in a JSON file (`notes.json`) in a dedicated data directory
-2. The data directory is mounted as a Docker volume to persist data across container restarts
-3. File operations are handled using Node.js `fs` module with proper error handling
-4. The application checks for the existence of the data directory and file on startup
-
-## Volume Type Decision
-
-You can use either a **named volume** or a **bind mount** for persistence. Here's the reasoning behind each choice:
-
-### Named Volume Advantages:
-- **Managed by Docker**: Docker takes care of storing the data in a location that persists across container restarts
-- **Portability**: The setup is more portable as it doesn't depend on specific host directories
-- **Isolation**: Better isolation from the host filesystem
-- **Data Safety**: Named volumes are not automatically deleted when containers are removed
-
-### Bind Mount Advantages:
-- **Visibility**: Data is directly accessible on the host filesystem for inspection and backup
-- **Development Convenience**: For development, you can easily view and modify the data files directly
-- **Flexibility**: Can be mounted from any location on the host
-
-For this development environment, both approaches would work well. Named volumes provide better isolation and portability, while bind mounts offer easier visibility and access to the data files.
-
-## Running the Application with Docker Commands
-
-### Building the Images
-
+## Step 1: Stop and Remove Any Existing Containers
 ```bash
-# Build the backend image
+# List all containers
+docker ps -a
+
+# Stop and remove any existing containers (replace container_name with your actual container names)
+docker stop container_name
+docker rm container_name
+```
+
+## Step 2: Create a Docker Network
+```bash
+docker network create my-app-network
+```
+
+## Step 3: Set Up the Backend
+
+### Navigate to the backend directory
+```bash
 cd backend
-docker build -t notes-backend:persistence .
-
-# Build the frontend image
-cd ../frontend
-docker build -t notes-frontend --build-arg VITE_API_URL=http://localhost:8081/api/notes .
 ```
 
-### Starting the Backend with Persistence
-
-#### Option 1: Using a Named Volume
-
+### Build the backend Docker image
 ```bash
-# Create a named volume
-docker volume create notes-data
-
-# Run the backend container with the named volume
-docker run -d -p 8081:3000 --name notes-backend-persistent \
-  -v notes-data:/app/data notes-backend:persistence
+docker build -t my-backend-api:network-proxy .
 ```
 
-#### Option 2: Using a Bind Mount
-
+### Run the backend container
 ```bash
-# Create a directory on your host machine
-mkdir -p ./backend-data
-
-# Run the backend container with the bind mount
-docker run -d -p 8081:3000 --name notes-backend-persistent \
-  -v $(pwd)/backend-data:/app/data notes-backend:persistence
+docker run -d \
+  --name backend-service \
+  --network my-app-network \
+  -p 8081:3000 \
+  -v my-backend-data:/app/data \
+  -e PORT=3000 \
+  my-backend-api:network-proxy
 ```
 
-### Starting the Frontend
+## Step 4: Set Up the Frontend
 
+### Navigate to the frontend directory
 ```bash
-# Run the frontend container
-docker run -d -p 8080:80 --name notes-frontend notes-frontend
+cd frontend
 ```
 
-## Testing Persistence
+### Make sure the nginx.conf file exists in the frontend directory
+Create the nginx.conf file as specified in the provided configuration.
 
-1. Access the frontend at http://localhost:8080
-2. Add some notes through the frontend
-3. Stop and remove the backend container:
-   ```bash
-   docker stop notes-backend-persistent
-   docker rm notes-backend-persistent
-   ```
-4. Start a new backend container with the same volume:
-   ```bash
-   # If using named volume
-   docker run -d -p 8081:3000 --name notes-backend-persistent \
-     -v notes-data:/app/data notes-backend:persistence
-   
-   # OR if using bind mount
-   docker run -d -p 8081:3000 --name notes-backend-persistent \
-     -v $(pwd)/backend-data:/app/data notes-backend:persistence
-   ```
-5. Access the frontend again and verify the notes are still available
-
-## Managing Containers
-
+### Build the frontend Docker image
 ```bash
-# List running containers
+docker build \
+  --build-arg VITE_API_URL=/api/notes \
+  -t my-frontend-app:network-proxy .
+```
+
+### Run the frontend container
+```bash
+docker run -d \
+  --name frontend-app \
+  --network my-app-network \
+  -p 8080:80 \
+  my-frontend-app:network-proxy
+```
+
+## Step 5: Test the Application
+- Open your browser and navigate to http://localhost:8080
+- You should see the Notes App interface
+- Add, view, and delete notes to test the functionality
+- The data will persist even if you stop and restart the backend container
+
+## Debugging Tips
+
+### View container logs
+```bash
+# View logs from the backend container
+docker logs backend-service
+
+# View logs from the frontend container
+docker logs frontend-app
+```
+
+### Check running containers
+```bash
 docker ps
+```
 
-# View container logs
-docker logs notes-backend-persistent
+### Inspect the network
+```bash
+docker network inspect my-app-network
+```
 
+### Access container shell
+```bash
+# Access backend container shell
+docker exec -it backend-service sh
+
+# Access frontend container shell
+docker exec -it frontend-app sh
+```
+
+### Test backend directly
+If you need to test the backend API directly, you can access it at:
+http://localhost:8081/api/notes
+
+### Restart containers
+```bash
+docker restart backend-service
+docker restart frontend-app
+```
+
+### Stop and remove containers
+```bash
 # Stop containers
-docker stop notes-frontend notes-backend-persistent
+docker stop backend-service frontend-app
 
 # Remove containers
-docker rm notes-frontend notes-backend-persistent
+docker rm backend-service frontend-app
 
-# List volumes
-docker volume ls
+# Remove network
+docker network rm my-app-network
 
-# Inspect volume data
-docker volume inspect notes-data
+# Remove volume (caution: this will delete persistent data)
+docker volume rm my-backend-data
 ```
-
-## Data Location
-
-- **Named Volume**: Docker manages this storage. Find location with `docker volume inspect notes-data`
-- **Bind Mount**: Data is stored in the `./backend-data` directory on your host
