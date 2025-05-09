@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  database:
+    image: postgres:17-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: notes_user
+      POSTGRES_PASSWORD: notes_password
+      POSTGRES_DB: notes_db
+    expose:
+      - "5432"
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notes_user -d notes_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build: ./backend
+    expose:
+      - "3000"
+    environment:
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - DB_HOST=database
+      - DB_PORT=5432
+      - DB_USER=notes_user
+      - DB_PASSWORD=notes_password
+      - DB_NAME=notes_db
+    volumes:
+      - notes_data:/app/data
+    depends_on:
+      - database
+
+  # Frontend with Nginx
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        - VITE_API_URL=/api
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  notes_data:

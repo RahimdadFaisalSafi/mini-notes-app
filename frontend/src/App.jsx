@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import NoteForm from "./components/NoteForm";
 import NoteList from "./components/NoteList";
 
-const API_URL = import.meta.env.VITE_API_URL;
 function App() {
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-
+  
+  // Get API URL from environment variable
+  const API_URL = import.meta.env.VITE_API_URL + "/notes";
+  
   useEffect(() => {
     const fetchNotes = async () => {
       try {
@@ -20,21 +21,20 @@ function App() {
         const data = await response.json();
         setNotes(data);
         setError(null);
-
-      } catch (err){
+       } catch (err){
         setError("Failed to fetch notes");
         console.log(err);
-      } 
-      finally {
+      }
+       finally {
         setLoading(false);
-      } 
+      }
     }
     fetchNotes();
-  }, []);
+  }, [API_URL]);
 
   const addNote = async (text) => {
     try {
-      const response = await fetch (API_URL, {
+      const response = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -77,12 +77,22 @@ function App() {
         </div>
         <div className="p-6">
           <NoteForm onAddNote={addNote} />
-          <div className="mt-6">
-            <h2 className="text-lg font-semibold text-gray-700 mb-4">
-             My Notes
-            </h2>
-            <NoteList notes={notes} onDeleteNote={deleteNote} />
-          </div>
+          {loading ? (
+            <p className="text-center mt-6">Loading notes...</p>
+          ) : error ? (
+            <p className="text-red-500 text-center mt-6">{error}</p>
+          ) : (
+            <div className="mt-6">
+              <h2 className="text-lg font-semibold text-gray-700 mb-4">
+                My Notes
+              </h2>
+              {notes.length === 0 ? (
+                <p className="text-gray-500 text-center">No notes yet. Add one above!</p>
+              ) : (
+                <NoteList notes={notes} onDeleteNote={deleteNote} />
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
