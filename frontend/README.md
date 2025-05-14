@@ -1,4 +1,55 @@
-# Notes Application with Docker Persistence
+# Notes App with PostgreSQL Database
+
+This is a full-stack Notes application that uses PostgreSQL for persistent data storage. The application includes a React frontend, Node.js/Express backend, and a PostgreSQL database, all containerized with Docker.
+
+## Project Structure
+
+```
+├── backend/
+│   ├── routes/
+│   │   └── noteRoutes.js   # API routes
+│   ├── sql/
+│   │   └── initial_schema.sql  # SQL schema creation script
+│   ├── db.js               # Database connection module
+│   ├── server.js           # Main application entry point
+│   ├── Dockerfile
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   └── App.jsx
+│   ├── Dockerfile
+│   └── package.json
+└── docker-compose.yml
+```
+
+## Database Schema
+
+The application uses a simple PostgreSQL schema with a single `notes` table:
+
+```sql
+CREATE TABLE notes (
+  id SERIAL PRIMARY KEY,
+  text TEXT NOT NULL,
+  date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+## Initial Setup
+
+### Prerequisites
+
+- Docker and Docker Compose installed on your system
+- Git for version control
+
+### Installing Dependencies
+
+The backend requires the PostgreSQL driver:
+
+```bash
+cd backend
+npm install pg
+```# Notes Application with Docker Persistence
 
 This project implements a simple notes application with React frontend and Node.js/Express backend. The backend uses file-based persistence with Docker volumes to ensure data is preserved across container restarts.
 
@@ -136,3 +187,84 @@ docker volume inspect notes-data
 
 - **Named Volume**: Docker manages this storage. Find location with `docker volume inspect notes-data`
 - **Bind Mount**: Data is stored in the `./backend-data` directory on your host
+
+### Manual Schema Creation
+
+After starting the stack for the first time, you need to manually create the database schema:
+
+1. Ensure the stack is running:
+   ```
+   docker-compose up -d
+   ```
+
+2. Execute the SQL schema file in the PostgreSQL container:
+   ```
+   docker exec -i $(docker-compose ps -q database) psql -U notes_user -d notes_db < backend/sql/initial_schema.sql
+   ```
+
+## Running the Application
+
+1. Start the application stack:
+   ```
+   docker-compose up -d --build
+   ```
+
+2. Access the application in your browser:
+   ```
+   http://localhost:8080
+   ```
+
+3. To stop the application:
+   ```
+   docker compose down
+   ```
+
+4. To completely reset the database (remove all data):
+   ```
+   docker compose down -v
+   ```
+   Then follow the "Initial Setup" steps again.
+
+## Testing Functionality
+
+1. Create a new note by typing in the input field and clicking "Add Note"
+2. View all notes listed in the "My Notes" section
+3. Delete a note by clicking the "Delete" button next to it
+4. Test persistence by restarting just the database:
+   ```
+   docker-compose restart database
+   ```
+   Then refresh your app to verify the notes are still there.
+
+## Implementation Details
+
+### Database Connection
+
+- The backend uses the `pg` driver with a connection pool for efficient database connections
+- Connection pooling improves performance by reusing database connections instead of creating new ones for each request
+- The backend connects to the database using environment variables provided in Docker Compose
+
+### Security Features
+
+- SQL injection is prevented using parameterized queries:
+  ```javascript
+  db.query('INSERT INTO notes (text) VALUES ($1)', [userInput])
+  ```
+- The backend only starts after the database is confirmed healthy via Docker Compose health checks
+
+### Manual Schema Management
+
+This implementation uses manual schema management, which includes:
+- Creating SQL scripts by hand
+- Manually executing these scripts against the database
+- No automated migration system
+
+While this approach is straightforward for learning, production applications would benefit from an automated migration tool like Knex.js, Sequelize, or TypeORM.
+
+## Advantages of Database vs File-based Storage
+
+- **Concurrency**: Multiple users can access and modify data simultaneously
+- **Scalability**: Can handle larger amounts of data more efficiently
+- **Data integrity**: ACID transactions ensure data remains consistent
+- **Query capabilities**: Complex data retrieval through SQL
+- **Backup and recovery**: Built-in mechanisms for data protection
